@@ -86,8 +86,16 @@ def _validate_verdict(data) -> dict:
 
 
 def _parse_llm_json(raw) -> typing.Any:
+    """Normalize an LLM response into a Python object.
+
+    Depending on the runtime and call options, exec_prompt may return text
+    (possibly wrapped in a markdown fence) or an already-parsed object, so
+    both are accepted. Anything else is an LLM error.
+    """
+    if isinstance(raw, (dict, list)):
+        return raw
     if not isinstance(raw, str):
-        raise ValueError("LLM response must be text")
+        raise ValueError("LLM response must be text or a JSON object")
     text = raw.strip()
     if text.startswith("```"):
         text = text.strip("`")
@@ -251,7 +259,7 @@ string), reasoning must be a string.
     "reasoning": "<max two sentences>"
 }}
 """
-            response = gl.nondet.exec_prompt(prompt, response_format="json")
+            response = gl.nondet.exec_prompt(prompt)
             try:
                 return _validate_verdict(_parse_llm_json(response))
             except ValueError as e:
