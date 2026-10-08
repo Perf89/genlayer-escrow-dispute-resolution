@@ -64,6 +64,30 @@ def test_parse_tolerates_code_fences():
     assert parse('```json\n{"a": 1}\n```') == {"a": 1}
 
 
+def test_parse_accepts_already_parsed_object():
+    # exec_prompt may hand back a parsed object instead of text
+    assert parse({"a": 1}) == {"a": 1}
+    verdict = {"work_satisfies_description": True, "reasoning": "ok"}
+    assert validate(parse(verdict))["work_satisfies_description"] is True
+
+
+def test_parse_rejects_non_text_non_object():
+    for bad in (None, 5, 1.5, True):
+        try:
+            parse(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {bad!r}")
+
+
+def test_parse_rejects_invalid_json_text():
+    try:
+        parse("not json at all")
+    except ValueError:  # json.JSONDecodeError is a ValueError
+        return
+    raise AssertionError("accepted invalid JSON")
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:
