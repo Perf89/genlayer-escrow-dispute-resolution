@@ -49,10 +49,10 @@ Money safety
     @gl.public.write.payable / gl.message.value, no float math anywhere.
     Status is flipped to its terminal value ("released"/"refunded") before
     the payout is emitted, so a job can never be paid out twice even if
-    resolve_dispute is retried. The GEN transfer itself is emitted with
-    on="finalized" rather than "accepted": money only actually moves once
-    this transaction itself survives its own appeal window, not the
-    instant consensus is first reached.
+    resolve_dispute is retried. The payout is an external value transfer to
+    a plain wallet, sent through an EVM recipient interface; GenLayer
+    executes it once this transaction is finalized, not the instant
+    consensus is first reached.
 """
 
 from genlayer import *
@@ -118,12 +118,34 @@ class Job:
     verdict_reasoning: str  # AI reasoning, if resolved via dispute
 
 
+@gl.evm.contract_interface
+class _ExternalRecipient:
+    """Ordinary wallet (EOA) recipient of native GEN.
+
+    Payouts go through an EVM interface with emit_transfer. Using
+    gl.get_contract_at(...) here is wrong: it sends a message to a GenLayer
+    contract and fails for a plain wallet address, so the value never arrives.
+    """
+
+    class View:
+        pass
+
+    class Write:
+        pass
+
+
 class EscrowDisputeResolution(gl.Contract):
     jobs: TreeMap[u256, Job]
     next_id: u256
 
     def __init__(self):
         self.next_id = u256(0)
+
+    def _pay(self, recipient: Address, amount: u256) -> None:
+        """Emit a native GEN transfer to a wallet. GenLayer executes it once
+        this transaction is finalized."""
+        if amount > u256(0):
+            _ExternalRecipient(recipient).emit_transfer(value=amount)
 
     # ---------------------------------------------------------------
     # Deterministic lifecycle — no AI on this path
@@ -180,7 +202,7 @@ class EscrowDisputeResolution(gl.Contract):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Job has not been marked delivered")
 
         job.status = "released"  # flipped before the transfer, never pays out twice
-        gl.get_contract_at(job.provider).emit_transfer(value=job.amount, on="finalized")
+        self._pay(job.provider, job.amount)
 
     @gl.public.write
     def reclaim_unfulfilled(self, job_id: int) -> None:
@@ -193,7 +215,7 @@ class EscrowDisputeResolution(gl.Contract):
             raise gl.vm.UserError(f"{ERROR_EXPECTED} Job already has a delivery claim")
 
         job.status = "refunded"
-        gl.get_contract_at(job.client).emit_transfer(value=job.amount, on="finalized")
+        self._pay(job.client, job.amount)
 
     # ---------------------------------------------------------------
     # Disputed path — AI consensus decides
@@ -299,10 +321,10 @@ string), reasoning must be a string.
         job.verdict_reasoning = result["reasoning"]
         if result["work_satisfies_description"]:
             job.status = "released"
-            gl.get_contract_at(job.provider).emit_transfer(value=job.amount, on="finalized")
+            self._pay(job.provider, job.amount)
         else:
             job.status = "refunded"
-            gl.get_contract_at(job.client).emit_transfer(value=job.amount, on="finalized")
+            self._pay(job.client, job.amount)
 
     # ---------------------------------------------------------------
     # Views

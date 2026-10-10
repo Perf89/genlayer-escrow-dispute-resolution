@@ -50,9 +50,10 @@ Real-world use cases:
   `@gl.public.write.payable` / `gl.message.value` — no float math anywhere.
   A job's status is flipped to its terminal value (`released`/`refunded`)
   *before* the payout is emitted, so retrying `resolve_dispute` can never
-  pay out twice. The GEN transfer is emitted with `on="finalized"`, so
-  funds only actually move once the resolving transaction itself survives
-  its own appeal window, not the instant consensus is first reached.
+  pay out twice. Payouts to plain wallets are external value transfers sent
+  through an EVM recipient interface (`emit_transfer`); GenLayer executes
+  them once the resolving transaction is finalized, not the instant
+  consensus is first reached.
 
 ## Design
 
