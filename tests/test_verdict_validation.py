@@ -88,6 +88,22 @@ def test_parse_rejects_invalid_json_text():
     raise AssertionError("accepted invalid JSON")
 
 
+def test_payouts_go_through_evm_recipient_interface():
+    # Regression: payouts to plain wallets must use an EVM interface.
+    # gl.get_contract_at(addr).emit_transfer(...) targets a GenLayer contract
+    # and the transfer fails for a wallet address (value never arrives).
+    code = "\n".join(
+        line for line in SRC.splitlines()
+        if not line.strip().startswith(("#", '"""')) and "gl.get_contract_at(...)" not in line
+    )
+    assert "@gl.evm.contract_interface" in SRC
+    assert "_ExternalRecipient(recipient).emit_transfer(value=amount)" in SRC
+    assert ".emit_transfer(" in SRC
+    assert "get_contract_at(job." not in code
+    # every payout goes through the single helper
+    assert SRC.count("self._pay(") == 4
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:
